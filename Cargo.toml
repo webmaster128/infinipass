@@ -31,3 +31,8 @@ serde = { version = "1.0.103", default-features = false, features = ["derive"] }
 wasmer-runtime-core = "=0.17.0"
 wasmer-middleware-common = "=0.17.0"
 wasmer-singlepass-backend = "=0.17.0"
+
+# Uncomment this block to see the bug
+# wasmer-runtime-core = "=0.17.1"
+# wasmer-middleware-common = "=0.17.1"
+# wasmer-singlepass-backend = "=0.17.1"
