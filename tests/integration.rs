@@ -180,7 +180,9 @@ mod singlepass_tests {
     use super::*;
 
     use cosmwasm_std::{to_vec, Empty};
-    use cosmwasm_vm::call_handle;
+    use cosmwasm_vm::testing::mock_dependencies;
+    use cosmwasm_vm::{call_handle, call_handle_raw, call_init_raw, features_from_csv, CosmCache};
+    use tempfile::TempDir;
 
     fn make_init_msg() -> (InitMsg, HumanAddr) {
         let verifier = HumanAddr::from("verifies");
@@ -233,6 +235,37 @@ mod singlepass_tests {
         );
         assert!(handle_res.is_err());
         assert_eq!(deps.get_gas_left(), 0);
+    }
+
+    #[test]
+    fn handle_cpu_loop_cache() {
+        let deps = mock_dependencies(20, &[]);
+        let gas_limit = 2_000_000u64;
+        let tmp_dir = TempDir::new().unwrap();
+        let features = features_from_csv("staking");
+        let mut cache = unsafe { CosmCache::new(tmp_dir.path(), features, 0) }.unwrap();
+        // store code
+        let code_id = cache.save_wasm(WASM).unwrap();
+        // init
+        let (init_msg, creator) = make_init_msg();
+        let env = mock_env(&deps.api, creator.as_str(), &coins(1000, "cosm"));
+        let mut instance = cache.get_instance(&code_id, deps, gas_limit).unwrap();
+        let raw_msg = to_vec(&init_msg).unwrap();
+        let raw_env = to_vec(&env).unwrap();
+        let res = call_init_raw(&mut instance, &raw_env, &raw_msg);
+        let gas_used = gas_limit - instance.get_gas_left();
+        println!("Init used gas: {}", gas_used);
+        res.unwrap();
+        let deps = instance.recycle().unwrap();
+        // handle
+        let mut instance = cache.get_instance(&code_id, deps, gas_limit).unwrap();
+        let raw_msg = r#"{"cpu_loop":{}}"#;
+        let res = call_handle_raw(&mut instance, &raw_env, raw_msg.as_bytes());
+        let gas_used = gas_limit - instance.get_gas_left();
+        println!("Handle used gas: {}", gas_used);
+        assert!(res.is_err());
+        assert_eq!(instance.get_gas_left(), 0);
+        instance.recycle();
     }
 
     #[test]
