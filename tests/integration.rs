@@ -1,36 +1,18 @@
 //! This integration test tries to run and call the generated wasm.
-//! It depends on a Wasm build being available, which you can create with `cargo wasm`.
+//! It depends on a Wasm build being available, which you can create with `cargo wasm-debug`.
 //! Then running `cargo integration-test` will validate we can properly call into that generated Wasm.
-//!
-//! You can easily convert unit tests to integration tests as follows:
-//! 1. Copy them over verbatim
-//! 2. Then change
-//!      let mut deps = mock_dependencies(20, &[]);
-//!    to
-//!      let mut deps = mock_instance(WASM, &[]);
-//! 3. If you access raw storage, where ever you see something like:
-//!      deps.storage.get(CONFIG_KEY).expect("no data stored");
-//!    replace it with:
-//!      deps.with_storage(|store| {
-//!          let data = store.get(CONFIG_KEY).expect("no data stored");
-//!          //...
-//!      });
-//! 4. Anywhere you see query(&deps, ...) you must replace it with query(&mut deps, ...)
 
 use cosmwasm_std::{
-    coins, from_binary, log, AllBalanceResponse, BankMsg, HandleResponse, HandleResult, HumanAddr,
-    InitResponse, InitResult, MigrateResponse, StdError,
+    coins, log, BankMsg, HandleResponse, HandleResult, HumanAddr, InitResponse, InitResult,
+    StdError,
 };
 use cosmwasm_vm::{
     from_slice,
-    testing::{
-        handle, init, migrate, mock_env, mock_instance, mock_instance_with_balances, query,
-        test_io, MOCK_CONTRACT_ADDR,
-    },
+    testing::{handle, init, mock_env, mock_instance, test_io, MOCK_CONTRACT_ADDR},
     Api, Storage,
 };
 
-use hackatom::contract::{HandleMsg, InitMsg, MigrateMsg, QueryMsg, State, CONFIG_KEY};
+use hackatom::contract::{HandleMsg, InitMsg, State, CONFIG_KEY};
 
 static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/debug/hackatom.wasm");
 // static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/hackatom.wasm");
@@ -72,89 +54,6 @@ fn proper_initialization() {
         })
         .unwrap();
     assert_eq!(state, expected_state);
-}
-
-#[test]
-fn init_and_query() {
-    let mut deps = mock_instance(WASM, &[]);
-
-    let verifier = HumanAddr(String::from("verifies"));
-    let beneficiary = HumanAddr(String::from("benefits"));
-    let creator = HumanAddr(String::from("creator"));
-    let msg = InitMsg {
-        verifier: verifier.clone(),
-        beneficiary,
-    };
-    let env = mock_env(&deps.api, creator.as_str(), &coins(1000, "earth"));
-    let res: InitResponse = init(&mut deps, env, msg).unwrap();
-    assert_eq!(0, res.messages.len());
-
-    // now let's query
-    let query_response = query(&mut deps, QueryMsg::Verifier {}).unwrap();
-    assert_eq!(query_response.as_slice(), b"{\"verifier\":\"verifies\"}");
-
-    // bad query returns parse error (pass wrong type - this connection is not enforced)
-    let qres = query(&mut deps, HandleMsg::Release {});
-    match qres.unwrap_err() {
-        StdError::ParseErr { .. } => {}
-        _ => panic!("Expected parse error"),
-    }
-}
-
-#[test]
-fn migrate_verifier() {
-    let mut deps = mock_instance(WASM, &[]);
-
-    let verifier = HumanAddr::from("verifies");
-    let beneficiary = HumanAddr::from("benefits");
-    let creator = HumanAddr::from("creator");
-    let msg = InitMsg {
-        verifier: verifier.clone(),
-        beneficiary,
-    };
-    let env = mock_env(&deps.api, creator.as_str(), &[]);
-    let res: InitResponse = init(&mut deps, env, msg).unwrap();
-    assert_eq!(0, res.messages.len());
-
-    // check it is 'verifies'
-    let query_response = query(&mut deps, QueryMsg::Verifier {}).unwrap();
-    assert_eq!(query_response.as_slice(), b"{\"verifier\":\"verifies\"}");
-
-    // change the verifier via migrate
-    let msg = MigrateMsg {
-        verifier: HumanAddr::from("someone else"),
-    };
-    let env = mock_env(&deps.api, creator.as_str(), &[]);
-    let res: MigrateResponse = migrate(&mut deps, env, msg).unwrap();
-    assert_eq!(0, res.messages.len());
-
-    // check it is 'someone else'
-    let query_response = query(&mut deps, QueryMsg::Verifier {}).unwrap();
-    assert_eq!(
-        query_response.as_slice(),
-        b"{\"verifier\":\"someone else\"}"
-    );
-}
-
-#[test]
-fn querier_callbacks_work() {
-    let rich_addr = HumanAddr::from("foobar");
-    let rich_balance = coins(10000, "gold");
-    let mut deps = mock_instance_with_balances(WASM, &[(&rich_addr, &rich_balance)]);
-
-    // querying with balance gets the balance
-    let query_msg = QueryMsg::OtherBalance { address: rich_addr };
-    let query_response = query(&mut deps, query_msg).unwrap();
-    let bal: AllBalanceResponse = from_binary(&query_response).unwrap();
-    assert_eq!(bal.amount, rich_balance);
-
-    // querying other accounts gets none
-    let query_msg = QueryMsg::OtherBalance {
-        address: HumanAddr::from("someone else"),
-    };
-    let query_response = query(&mut deps, query_msg).unwrap();
-    let bal: AllBalanceResponse = from_binary(&query_response).unwrap();
-    assert_eq!(bal.amount, vec![]);
 }
 
 #[test]
