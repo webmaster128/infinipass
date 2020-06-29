@@ -2,187 +2,20 @@
 //! It depends on a Wasm build being available, which you can create with `cargo wasm-debug`.
 //! Then running `cargo integration-test` will validate we can properly call into that generated Wasm.
 
-use cosmwasm_std::{
-    coins, log, BankMsg, HandleResponse, HandleResult, HumanAddr, InitResponse, InitResult,
-    StdError,
-};
-use cosmwasm_vm::{
-    from_slice,
-    testing::{handle, init, mock_env, mock_instance, test_io, MOCK_CONTRACT_ADDR},
-    Api, Storage,
-};
-
-use hackatom::contract::{HandleMsg, InitMsg, State, CONFIG_KEY};
-
-static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/hackatom.wasm");
-
-#[test]
-fn proper_initialization() {
-    let mut deps = mock_instance(WASM, &[]);
-    assert_eq!(deps.required_features.len(), 0);
-
-    let verifier = HumanAddr(String::from("verifies"));
-    let beneficiary = HumanAddr(String::from("benefits"));
-    let creator = HumanAddr(String::from("creator"));
-    let expected_state = State {
-        verifier: deps.api.canonical_address(&verifier).unwrap(),
-        beneficiary: deps.api.canonical_address(&beneficiary).unwrap(),
-        funder: deps.api.canonical_address(&creator).unwrap(),
-    };
-
-    let msg = InitMsg {
-        verifier,
-        beneficiary,
-    };
-    let env = mock_env(&deps.api, "creator", &coins(1000, "earth"));
-    let res: InitResponse = init(&mut deps, env, msg).unwrap();
-    assert_eq!(res.messages.len(), 0);
-    assert_eq!(res.log.len(), 1);
-    assert_eq!(res.log[0].key, "Let the");
-    assert_eq!(res.log[0].value, "hacking begin");
-
-    // it worked, let's check the state
-    let state: State = deps
-        .with_storage(|store| {
-            let data = store
-                .get(CONFIG_KEY)
-                .expect("error reading db")
-                .0
-                .expect("no data stored");
-            from_slice(&data)
-        })
-        .unwrap();
-    assert_eq!(state, expected_state);
-}
-
-#[test]
-fn fails_on_bad_init() {
-    let mut deps = mock_instance(WASM, &[]);
-    let env = mock_env(&deps.api, "creator", &coins(1000, "earth"));
-    // bad init returns parse error (pass wrong type - this connection is not enforced)
-    let res: InitResult = init(&mut deps, env, HandleMsg::Release {});
-    match res.unwrap_err() {
-        StdError::ParseErr { .. } => {}
-        _ => panic!("Expected parse error"),
-    }
-}
-
-#[test]
-fn handle_release_works() {
-    let mut deps = mock_instance(WASM, &[]);
-
-    // initialize the store
-    let creator = HumanAddr::from("creator");
-    let verifier = HumanAddr::from("verifies");
-    let beneficiary = HumanAddr::from("benefits");
-
-    let init_msg = InitMsg {
-        verifier: verifier.clone(),
-        beneficiary: beneficiary.clone(),
-    };
-    let init_amount = coins(1000, "earth");
-    let init_env = mock_env(&deps.api, creator.as_str(), &init_amount);
-    let contract_addr = deps.api.human_address(&init_env.contract.address).unwrap();
-    let init_res: InitResponse = init(&mut deps, init_env, init_msg).unwrap();
-    assert_eq!(init_res.messages.len(), 0);
-
-    // balance changed in init
-    deps.with_querier(|querier| {
-        querier.update_balance(&contract_addr, init_amount);
-        Ok(())
-    })
-    .unwrap();
-
-    // beneficiary can release it
-    let handle_env = mock_env(&deps.api, verifier.as_str(), &[]);
-    let handle_res: HandleResponse = handle(&mut deps, handle_env, HandleMsg::Release {}).unwrap();
-    assert_eq!(handle_res.messages.len(), 1);
-    let msg = handle_res.messages.get(0).expect("no message");
-    assert_eq!(
-        msg,
-        &BankMsg::Send {
-            from_address: HumanAddr::from(MOCK_CONTRACT_ADDR),
-            to_address: beneficiary,
-            amount: coins(1000, "earth"),
-        }
-        .into(),
-    );
-    assert_eq!(
-        handle_res.log,
-        vec![log("action", "release"), log("destination", "benefits"),],
-    );
-    assert_eq!(handle_res.data, Some(vec![0xF0, 0x0B, 0xAA].into()));
-}
-
-#[test]
-fn handle_release_fails_for_wrong_sender() {
-    let mut deps = mock_instance(WASM, &[]);
-
-    // initialize the store
-    let creator = HumanAddr::from("creator");
-    let verifier = HumanAddr::from("verifies");
-    let beneficiary = HumanAddr::from("benefits");
-
-    let init_msg = InitMsg {
-        verifier: verifier.clone(),
-        beneficiary: beneficiary.clone(),
-    };
-    let init_amount = coins(1000, "earth");
-    let init_env = mock_env(&deps.api, creator.as_str(), &init_amount);
-    let contract_addr = deps.api.human_address(&init_env.contract.address).unwrap();
-    let init_res: InitResponse = init(&mut deps, init_env, init_msg).unwrap();
-    assert_eq!(init_res.messages.len(), 0);
-
-    // balance changed in init
-    deps.with_querier(|querier| {
-        querier.update_balance(&contract_addr, init_amount);
-        Ok(())
-    })
-    .unwrap();
-
-    // beneficiary cannot release it
-    let handle_env = mock_env(&deps.api, beneficiary.as_str(), &[]);
-    let handle_res: HandleResult = handle(&mut deps, handle_env, HandleMsg::Release {});
-    match handle_res.unwrap_err() {
-        StdError::Unauthorized { .. } => {}
-        _ => panic!("Expect unauthorized error"),
-    }
-
-    // state should not change
-    let data = deps
-        .with_storage(|store| {
-            Ok(store
-                .get(CONFIG_KEY)
-                .expect("error reading db")
-                .0
-                .expect("no data stored"))
-        })
-        .unwrap();
-    let state: State = from_slice(&data).unwrap();
-    assert_eq!(
-        state,
-        State {
-            verifier: deps.api.canonical_address(&verifier).unwrap(),
-            beneficiary: deps.api.canonical_address(&beneficiary).unwrap(),
-            funder: deps.api.canonical_address(&creator).unwrap(),
-        }
-    );
-}
-
-#[test]
-fn passes_io_tests() {
-    let mut deps = mock_instance(WASM, &[]);
-    test_io(&mut deps);
-}
-
 #[cfg(feature = "singlepass")]
 mod singlepass_tests {
-    use super::*;
+    use hackatom::contract::{HandleMsg, InitMsg, State, CONFIG_KEY};
 
+    use cosmwasm_std::{
+        coins, log, BankMsg, HandleResponse, HandleResult, HumanAddr, InitResponse, InitResult,
+        StdError,
+    };
     use cosmwasm_std::{to_vec, Empty};
-    use cosmwasm_vm::testing::mock_dependencies;
+    use cosmwasm_vm::testing::{handle, init, mock_dependencies, mock_env, mock_instance};
     use cosmwasm_vm::{call_handle, call_handle_raw, call_init_raw, features_from_csv, CosmCache};
     use tempfile::TempDir;
+
+    static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/hackatom.wasm");
 
     fn make_init_msg() -> (InitMsg, HumanAddr) {
         let verifier = HumanAddr::from("verifies");
