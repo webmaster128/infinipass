@@ -32,7 +32,8 @@ use cosmwasm_vm::{
 
 use hackatom::contract::{HandleMsg, InitMsg, MigrateMsg, QueryMsg, State, CONFIG_KEY};
 
-static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/hackatom.wasm");
+static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/debug/hackatom.wasm");
+// static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/hackatom.wasm");
 
 #[test]
 fn proper_initialization() {
