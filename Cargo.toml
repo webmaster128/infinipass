@@ -28,7 +28,6 @@ schemars = "0.7"
 serde = { version = "1.0.103", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
-tempfile = "3.1.0"
 wasmer-runtime-core = "=0.17.0"
 wasmer-middleware-common = "=0.17.0"
 wasmer-singlepass-backend = "=0.17.0"

@@ -2,10 +2,10 @@
 //! It depends on a Wasm build being available, which you can create with `cargo wasm-debug`.
 //! Then running `cargo integration-test` will validate we can properly call into that generated Wasm.
 
-use tempfile::TempDir;
 use wasmer_middleware_common::metering;
 use wasmer_runtime_core::{
     backend::Compiler,
+    cache::Artifact,
     codegen::{MiddlewareChain, StreamingCompiler},
     compile_with,
     error::{InvokeError, RuntimeError},
@@ -64,6 +64,36 @@ pub fn get_gas_left(instance: &Instance) -> u64 {
 fn do_cpu_loop_direct_export() {
     let module = compile(WASM);
     let mut instance = instantiate(&module);
+    set_gas_limit(&mut instance, 1_000_000);
+    let func: Func<(), (), Wasm> = instance.exports.get("do_cpu_loop").unwrap();
+    let result = func.call();
+
+    match result.unwrap_err() {
+        // TODO: fix the issue described below:
+        // `InvokeError::FailedWithNoError` happens when running out of gas in singlepass v0.17
+        // but it's supposed to indicate bugs in Wasmer...
+        // https://github.com/wasmerio/wasmer/issues/1452
+        // https://github.com/CosmWasm/cosmwasm/issues/375
+        RuntimeError::InvokeError(InvokeError::FailedWithNoError) => { /* out of gas, good! */ }
+        e => println!("Unexpedcted error: {:?}", e),
+    }
+
+    assert_eq!(get_gas_left(&instance), 0);
+}
+
+#[test]
+fn do_cpu_loop_cached() {
+    let module = compile(WASM);
+    let serialized_cache = module.cache().unwrap();
+    let buffer = serialized_cache.serialize().unwrap();
+
+    let serialized_cache = Artifact::deserialize(&buffer).unwrap();
+    let restored =
+        unsafe { wasmer_runtime_core::load_cache_with(serialized_cache, compiler().as_ref()) }
+            .unwrap();
+
+    let mut instance = instantiate(&restored);
+
     set_gas_limit(&mut instance, 1_000_000);
     let func: Func<(), (), Wasm> = instance.exports.get("do_cpu_loop").unwrap();
     let result = func.call();
