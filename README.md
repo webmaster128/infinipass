@@ -5,5 +5,5 @@
 cargo wasm
 
 # Run it in singlepass
-cargo +nightly integration-test --no-default-features --features singlepass
+cargo +nightly integration-test
 ```
