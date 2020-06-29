@@ -1,5 +1,5 @@
 //! This integration test tries to run and call the generated wasm.
-//! It depends on a Wasm build being available, which you can create with `cargo wasm-debug`.
+//! It depends on a Wasm build being available, which you can create with `cargo wasm`.
 //! Then running `cargo integration-test` will validate we can properly call into that generated Wasm.
 
 use wasmer_middleware_common::metering;
@@ -16,7 +16,7 @@ use wasmer_runtime_core::{
 };
 use wasmer_singlepass_backend::ModuleCodeGenerator;
 
-static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/hackatom.wasm");
+static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/infinipass.wasm");
 
 /// In Wasmer, The gas limit on instances is set during compile time and is included in the compiled binaries.
 /// This causes issues when trying to reuse the same precompiled binaries for another instance with a different

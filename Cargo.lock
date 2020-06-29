@@ -163,17 +163,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hackatom"
-version = "0.9.1"
-dependencies = [
- "schemars",
- "serde",
- "wasmer-middleware-common",
- "wasmer-runtime-core",
- "wasmer-singlepass-backend",
-]
-
-[[package]]
 name = "hex"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -187,6 +176,17 @@ checksum = "076f042c5b7b98f31d205f1249267e12a6518c1481e9dae9764af19b707d2292"
 dependencies = [
  "autocfg",
  "serde",
+]
+
+[[package]]
+name = "infinipass"
+version = "11.22.33"
+dependencies = [
+ "schemars",
+ "serde",
+ "wasmer-middleware-common",
+ "wasmer-runtime-core",
+ "wasmer-singlepass-backend",
 ]
 
 [[package]]
